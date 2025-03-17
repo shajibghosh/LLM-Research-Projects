@@ -1,4 +1,3 @@
-# LLM-Research-and-Projects
 # **LoRA & QLoRA Fine-Tuning and Evaluation for LLaMA**
 This repository provides a comprehensive setup for fine-tuning **Meta-LLaMA** models using **LoRA (Low-Rank Adaptation)** and **QLoRA (Quantized Low-Rank Adaptation)** techniques. It includes training scripts, evaluation tools, and performance benchmarking across different datasets.
 
@@ -13,6 +12,7 @@ This repository provides a comprehensive setup for fine-tuning **Meta-LLaMA** mo
   - [3. Fine-Tuning](#3-fine-tuning)
   - [4. Evaluating Models](#4-evaluating-models)
 - [Results Interpretation](#results-interpretation)
+- [Acknowledgements](#acknowledgements)
 - [License](#license)
 
 ---
@@ -145,6 +145,17 @@ The evaluation scripts generate detailed training statistics. Key metrics includ
 | **Tokens per Second** | Training speed in tokens/sec |
 | **GPU Memory Usage** | Peak memory usage during training |
 | **Memory Efficiency** | Number of tokens processed per GB of memory |
+
+---
+
+## **Acknowledgements**
+This project acknowledges the contributions of:
+- **Meta AI** for developing the **LLaMA** models.
+  - [LLaMA 3.2 1B on Meta AI](https://ai.meta.com/resources/models-and-libraries/llama-3/)
+  - [LLaMA 3.2 3B on Meta AI](https://ai.meta.com/resources/models-and-libraries/llama-3/)
+- **Hugging Face** for providing an extensive ecosystem for model training, hosting, and dataset management.
+  - [LLaMA 3.2 1B on Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-1B)
+  - [LLaMA 3.2 3B on Hugging Face](https://huggingface.co/meta-llama/Llama-3.2-3B)
 
 ---
 
