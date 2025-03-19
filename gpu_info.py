@@ -1,6 +1,9 @@
+# Importing required libraries
 import torch
 import subprocess
 
+
+# Function definition
 def get_gpu_details():
     if not torch.cuda.is_available():
         print("No GPU detected.")
@@ -22,14 +25,14 @@ def get_gpu_details():
         print(f"  - Memory Allocated (used by tensors): {memory_allocated:.2f} GB")
         print(f"  - Memory Reserved (cached for PyTorch): {memory_reserved:.2f} GB")
 
-        # Get real-time utilization and temperature from nvidia-smi
+        # Getting real-time utilization and temperature from nvidia-smi
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
                 stdout=subprocess.PIPE, text=True, check=True
             )
             lines = result.stdout.strip().split("\n")
-            if i < len(lines):  # Ensure we don't access an out-of-bounds index
+            if i < len(lines):  # Ensuring that we don't access an out-of-bounds index
                 values = lines[i].split(", ")
                 if len(values) == 2:
                     utilization, temperature = values
@@ -42,7 +45,7 @@ def get_gpu_details():
         except Exception as e:
             print(f"  - Failed to retrieve utilization & temperature: {e}")
 
-    # Get system-wide CUDA & Driver version
+    # Getting system-wide CUDA & Driver version
     try:
         result = subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, text=True, check=True)
         lines = result.stdout.split("\n")
@@ -53,5 +56,7 @@ def get_gpu_details():
     except Exception as e:
         print("\nFailed to retrieve CUDA and Driver version:", e)
 
+
+# Main execution starts here
 if __name__ == "__main__":
     get_gpu_details()
