@@ -7,14 +7,13 @@ Includes:
 - Best/final/epochal checkpointing
 - Isolated run directories
 - TFLOP and performance summary
+- NaN loss detection and gradient clipping
 """
 
 import os, time, math, argparse, warnings, torch
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedTokenizerFast
-
-from dotenv import load_dotenv
-load_dotenv()
 
 from models.llama import load_llama_model
 from models.lora import inject_lora_adapters
@@ -27,14 +26,13 @@ from utils.logging import Logger
 USE_WANDB = os.getenv("USE_WANDB", "false").lower() == "true"
 USE_HF_UPLOAD = os.getenv("USE_HF_UPLOAD", "false").lower() == "true"
 SAVE_EVERY_EPOCH = int(os.getenv("SAVE_EVERY_EPOCH", 1))
+GRAD_CLIP_NORM = float(os.getenv("GRAD_CLIP_NORM", 1.0))
+
 warnings.filterwarnings("ignore")
 
 
 class TokenizedDataset(Dataset):
-    """Wraps list of tokenized samples into PyTorch Dataset"""
-    def __init__(self, samples):
-        self.samples = samples
-
+    def __init__(self, samples): self.samples = samples
     def __len__(self): return len(self.samples)
     def __getitem__(self, idx): return self.samples[idx]
 
@@ -53,7 +51,6 @@ def parse_args():
 
 
 def get_latest_checkpoint_dir(base_path: str):
-    """Scans directory for latest checkpoint directory."""
     checkpoints = [d for d in os.listdir(base_path) if d.startswith("checkpoint_epoch_")]
     if not checkpoints:
         return None
@@ -65,7 +62,6 @@ def train():
     args = parse_args()
     torch.cuda.reset_peak_memory_stats()
 
-    # Create unique run folder using timestamp
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     run_id = f"{args.adapter}_run_{timestamp}"
     args.save_path = os.path.join(args.save_path, run_id)
@@ -74,7 +70,6 @@ def train():
     model, tokenizer = load_llama_model(args.model_name, torch_dtype=torch.float16)
     print(f"[INFO] Model device map:\n{model.hf_device_map}")
 
-    # Inject adapter of choice
     if args.adapter == "lora":
         inject_lora_adapters(model)
     else:
@@ -102,7 +97,6 @@ def train():
     total_tokens = len(tokenized_samples) * args.max_tokens
     start_time = time.time()
 
-    # === Auto-resume from latest ===
     start_epoch = 0
     latest_ckpt = get_latest_checkpoint_dir(args.save_path)
     if latest_ckpt:
@@ -112,7 +106,6 @@ def train():
         meta = torch.load(os.path.join(latest_ckpt, "meta.pt"))
         start_epoch = meta.get("epoch", 0)
 
-    # === Training ===
     best_loss = float("inf")
     for epoch in range(start_epoch, args.epochs):
         total_loss = 0
@@ -122,19 +115,27 @@ def train():
 
             outputs = model(**batch)
             loss = outputs.loss
+
+            if torch.isnan(loss):
+                print(f"[WARNING] NaN loss at epoch {epoch+1}, step {step+1}. Skipping...")
+                optimizer.zero_grad()
+                continue
+
             loss.backward()
+
+            # Clip gradients to prevent exploding gradients
+            clip_grad_norm_(model.parameters(), GRAD_CLIP_NORM)
+
             optimizer.step()
             optimizer.zero_grad()
             total_loss += loss.item()
 
-            # Per-step logging
             logger.log(step=epoch * len(dataloader) + step, loss=loss.item(), lr=args.lr)
             print(f"[Epoch {epoch+1}] Step {step+1}/{len(dataloader)} | Loss: {loss.item():.4f}")
 
         avg_loss = total_loss / len(dataloader)
         print(f">>> Epoch {epoch+1} completed. Avg Loss: {avg_loss:.4f}")
 
-        # Save checkpoint
         if (epoch + 1) % SAVE_EVERY_EPOCH == 0:
             ckpt_dir = os.path.join(args.save_path, f"checkpoint_epoch_{epoch+1}")
             os.makedirs(ckpt_dir, exist_ok=True)
@@ -143,7 +144,6 @@ def train():
             torch.save({"epoch": epoch + 1}, os.path.join(ckpt_dir, "meta.pt"))
             print(f"[Checkpoint] Saved to {ckpt_dir}")
 
-        # Save best-performing model
         if avg_loss < best_loss:
             best_loss = avg_loss
             best_path = os.path.join(args.save_path, "best")
@@ -152,7 +152,7 @@ def train():
             tokenizer.save_pretrained(best_path)
             print(f"[Best] Saved best model to {best_path}")
 
-    # === Final Metrics ===
+    # === Performance Summary ===
     total_time = time.time() - start_time
     tokens_per_sec = total_tokens / total_time
     peak_mem = torch.cuda.max_memory_allocated() / (1024 ** 3)
@@ -172,21 +172,19 @@ def train():
     print(f"Final Loss       : {avg_loss:.4f}")
     print(f"Time Taken       : {total_time:.2f}s | Tokens/sec: {tokens_per_sec:.2f} | TFLOPs: {flops_per_sec:.2f}")
 
-    # === Save final model ===
     final_path = os.path.join(args.save_path, "final")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
     print(f"[Final] Saved final model to {final_path}")
 
     logger.close()
-
-    print(f"\nTraining completed. Logs saved to {args.save_path}")
-    print("Launch TensorBoard with:\n    tensorboard --logdir=runs")
+    print(f"\n[INFO] Training completed. Logs saved to {args.save_path}")
+    print("To launch TensorBoard, run:\n    tensorboard --logdir=runs")
 
 
 if __name__ == "__main__":
     train()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
     print("Training script finished.")
-    torch.cuda.synchronize()    
